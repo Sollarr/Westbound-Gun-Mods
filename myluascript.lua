@@ -1,0 +1,11 @@
+local list = require(game:GetService("ReplicatedStorage").GunScripts.GunStats)
+for i,v in pairs(list) do
+v.Spread = 0
+v.prepTime = 0.1
+v.equipTime = 0.1
+v.MaxShots = math.huge
+v.ReloadSpeed = 0.1
+v.BulletSpeed = 250
+v.HipFireAccuracy = 0
+v.ZoomAccuracy = 0
+end
