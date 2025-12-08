@@ -1,5 +1,10 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Locate the ModuleScript ONCE to save performance
+local GunStatsModuleScript = ReplicatedStorage:WaitForChild("GunScripts"):WaitForChild("GunStats")
+
 local mods = {
-    -- SPEED & ACCURACY ENFORCEMENT
+    -- SPEED & ACCURACY
     Spread = 0,
     prepTime = 0.01,
     equipTime = 0.01,
@@ -9,29 +14,31 @@ local mods = {
     HipFireAccuracy = 0,
     ZoomAccuracy = 0,
     InstantFireAnimation = true,
-    BulletSpeed = 5000, 
-    FireRate = 0, -- Keeps max fire rate, but relies on client input (clicker/aimbot)
+    BulletSpeed = 5000,
+    FireRate = 0,
 
-    -- DAMAGE BYPASS STRATEGY
-    Damage = 10,                 -- Low base damage (to avoid flags)
-    HeadshotMultiplier = 5000,   -- Multiplier attempt 1
-    BodyShotMultiplier = 5000,   -- Multiplier attempt 2
-    AmmoPerShot = 0,             -- Prevents ammo consumption
-    
-    -- REMOVED: FanFire, Pellets (To prevent buffalo sniper bugs)
+    -- DAMAGE BYPASS
+    Damage = 10,
+    HeadshotMultiplier = 5000,
+    BodyShotMultiplier = 5000,
+    AmmoPerShot = 0
 }
 
-local GunStatsModule = require(game:GetService("ReplicatedStorage").GunScripts.GunStats)
-
--- Continuous Loop
+-- Main Enforcement Loop
 while true do
-    task.wait(0.05) 
+    -- 'pcall' prevents the script from crashing if the module fails to load momentarily
+    local success, gunStats = pcall(require, GunStatsModuleScript)
 
-    for _, gun in pairs(GunStatsModule) do
-        for prop, value in pairs(mods) do
-            if gun and gun[prop] ~= value then 
-                gun[prop] = value
+    if success and gunStats then
+        for _, gun in pairs(gunStats) do
+            for prop, value in pairs(mods) do
+                -- Only write to memory if the value has actually changed
+                if gun[prop] ~= value then
+                    gun[prop] = value
+                end
             end
         end
     end
+
+    task.wait(0.1) -- Runs 10 times a second (Sufficient and efficient)
 end
