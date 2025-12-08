@@ -1,48 +1,37 @@
 local mods = {
+    -- SPEED & ACCURACY ENFORCEMENT
+    Spread = 0,
+    prepTime = 0.01,
+    equipTime = 0.01,
+    MaxShots = math.huge,
+    ReloadAnimationSpeed = 0.01,
+    ReloadSpeed = 0.01,
+    HipFireAccuracy = 0,
+    ZoomAccuracy = 0,
+    InstantFireAnimation = true,
+    BulletSpeed = 5000, 
+    FireRate = 0, -- Keeps max fire rate, but relies on client input (clicker/aimbot)
 
-    Damage = 10000, 
-
-    FanFire = true, 
-
-    camShakeResist = 0, 
-
-    Spread = 0, 
-
-    prepTime = 0.1, 
-
-    equipTime = 0.1, 
-
-    MaxShots = math.huge, 
-
-    ReloadAnimationSpeed = 0.1, 
-
-    ReloadSpeed = 0.1, 
-
-    BulletSpeed = 250, 
-
-    HipFireAccuracy = 0, 
-
-    ZoomAccuracy = 0, 
-
-    InstantFireAnimation = true
-
+    -- DAMAGE BYPASS STRATEGY
+    Damage = 10,                 -- Low base damage (to avoid flags)
+    HeadshotMultiplier = 5000,   -- Multiplier attempt 1
+    BodyShotMultiplier = 5000,   -- Multiplier attempt 2
+    AmmoPerShot = 0,             -- Prevents ammo consumption
+    
+    -- REMOVED: FanFire, Pellets (To prevent buffalo sniper bugs)
 }
 
+local GunStatsModule = require(game:GetService("ReplicatedStorage").GunScripts.GunStats)
 
+-- Continuous Loop
+while true do
+    task.wait(0.05) 
 
-for _, gun in pairs(require(game:GetService("ReplicatedStorage").GunScripts.GunStats)) do
-
-    for prop, value in pairs(mods) do
-
-        if gun[prop] then
-
-            gun[prop] = value
-
+    for _, gun in pairs(GunStatsModule) do
+        for prop, value in pairs(mods) do
+            if gun and gun[prop] ~= value then 
+                gun[prop] = value
+            end
         end
-
     end
-
 end
-
-
-
