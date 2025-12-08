@@ -1,10 +1,27 @@
+--[[ 
+    GENOCIDE GUI - Gun Mod Interface
+    Features: Draggable, Collapsible, Optimized Loop
+]]
+
+local Players = game:GetService("Players")
+local CoreGui = game:GetService("CoreGui")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
--- Locate the ModuleScript ONCE to save performance
-local GunStatsModuleScript = ReplicatedStorage:WaitForChild("GunScripts"):WaitForChild("GunStats")
+-- // CONFIGURATION // --
+local GUI_COLOR = Color3.fromRGB(30, 30, 30) -- Dark Grey Background
+local ACCENT_COLOR = Color3.fromRGB(255, 0, 0) -- Deep Red (Changed to fit the theme)
+local TEXT_COLOR = Color3.fromRGB(255, 255, 255)
 
+-- // LOGIC VARIABLES // --
+local isEnabled = false
+local isMinimized = false
+local loopConnection = nil
+
+-- // MODS TABLE // --
 local mods = {
-    -- SPEED & ACCURACY
     Spread = 0,
     prepTime = 0.01,
     equipTime = 0.01,
@@ -16,29 +33,203 @@ local mods = {
     InstantFireAnimation = true,
     BulletSpeed = 5000,
     FireRate = 0,
-
-    -- DAMAGE BYPASS
     Damage = 10,
     HeadshotMultiplier = 5000,
     BodyShotMultiplier = 5000,
     AmmoPerShot = 0
 }
 
--- Main Enforcement Loop
-while true do
-    -- 'pcall' prevents the script from crashing if the module fails to load momentarily
-    local success, gunStats = pcall(require, GunStatsModuleScript)
+-- // GUI CREATION // --
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "GenocideGUI"
+ScreenGui.ResetOnSpawn = false
+-- Try to parent to CoreGui for security, fallback to PlayerGui
+pcall(function() ScreenGui.Parent = CoreGui end)
+if not ScreenGui.Parent then ScreenGui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui") end
 
-    if success and gunStats then
-        for _, gun in pairs(gunStats) do
-            for prop, value in pairs(mods) do
-                -- Only write to memory if the value has actually changed
-                if gun[prop] ~= value then
-                    gun[prop] = value
+-- Main Frame
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 200, 0, 100)
+MainFrame.Position = UDim2.new(0.1, 0, 0.1, 0)
+MainFrame.BackgroundColor3 = GUI_COLOR
+MainFrame.BorderSizePixel = 0
+MainFrame.ClipsDescendants = true
+MainFrame.Parent = ScreenGui
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.Parent = MainFrame
+
+-- Title Bar (Drag Handle)
+local TitleBar = Instance.new("TextButton") -- Using button for easier input handling
+TitleBar.Name = "TitleBar"
+TitleBar.Size = UDim2.new(1, 0, 0, 30)
+TitleBar.BackgroundColor3 = ACCENT_COLOR
+TitleBar.Text = "GENOCIDE"
+TitleBar.TextColor3 = TEXT_COLOR
+TitleBar.Font = Enum.Font.GothamBold
+TitleBar.TextSize = 16
+TitleBar.AutoButtonColor = false
+TitleBar.Parent = MainFrame
+
+local TitleCorner = Instance.new("UICorner")
+TitleCorner.CornerRadius = UDim.new(0, 8)
+TitleCorner.Parent = TitleBar
+
+-- Fix bottom corners of title bar looking round when expanded
+local BottomCover = Instance.new("Frame")
+BottomCover.Name = "SquareBottom"
+BottomCover.Size = UDim2.new(1, 0, 0, 10)
+BottomCover.Position = UDim2.new(0, 0, 1, -10)
+BottomCover.BackgroundColor3 = ACCENT_COLOR
+BottomCover.BorderSizePixel = 0
+BottomCover.Parent = TitleBar
+
+-- Toggle Button
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Name = "ToggleButton"
+ToggleButton.Size = UDim2.new(0.8, 0, 0, 40)
+ToggleButton.Position = UDim2.new(0.1, 0, 0.45, 0)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100) -- Grey (Off)
+ToggleButton.Text = "OFF"
+ToggleButton.TextColor3 = TEXT_COLOR
+ToggleButton.Font = Enum.Font.GothamBold
+ToggleButton.TextSize = 18
+ToggleButton.Parent = MainFrame
+
+local ToggleCorner = Instance.new("UICorner")
+ToggleCorner.CornerRadius = UDim.new(0, 6)
+ToggleCorner.Parent = ToggleButton
+
+-- Minimize Button (The 'G' Icon logic)
+local MinimizeButton = Instance.new("TextButton")
+MinimizeButton.Name = "MinimizeButton"
+MinimizeButton.Size = UDim2.new(0, 25, 0, 25)
+MinimizeButton.Position = UDim2.new(1, -30, 0, 2)
+MinimizeButton.BackgroundTransparency = 1
+MinimizeButton.Text = "-"
+MinimizeButton.TextColor3 = TEXT_COLOR
+MinimizeButton.Font = Enum.Font.GothamBold
+MinimizeButton.TextSize = 20
+MinimizeButton.Parent = TitleBar
+MinimizeButton.ZIndex = 2
+
+-- // DRAGGING LOGIC // --
+local dragging, dragInput, dragStart, startPos
+
+local function update(input)
+    local delta = input.Position - dragStart
+    MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+TitleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+TitleBar.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        update(input)
+    end
+end)
+
+-- // MINIMIZE LOGIC // --
+MinimizeButton.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+    
+    if isMinimized then
+        -- Shrink to icon
+        local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        
+        -- Hide contents
+        ToggleButton.Visible = false
+        TitleBar.Text = "G"
+        MinimizeButton.Text = "" -- Hide the minus sign
+        BottomCover.Visible = false -- Keep round corners
+        
+        -- Resize
+        TweenService:Create(MainFrame, tweenInfo, {Size = UDim2.new(0, 40, 0, 40)}):Play()
+        TweenService:Create(TitleBar, tweenInfo, {Size = UDim2.new(1, 0, 1, 0)}):Play()
+        
+        -- Center text
+        TitleBar.TextSize = 24
+    else
+        -- Expand back
+        local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        
+        TweenService:Create(MainFrame, tweenInfo, {Size = UDim2.new(0, 200, 0, 100)}):Play()
+        TweenService:Create(TitleBar, tweenInfo, {Size = UDim2.new(1, 0, 0, 30)}):Play()
+        
+        task.wait(0.1) -- Wait for tween slightly
+        ToggleButton.Visible = true
+        TitleBar.Text = "GENOCIDE"
+        MinimizeButton.Text = "-"
+        BottomCover.Visible = true
+        TitleBar.TextSize = 16
+    end
+end)
+
+-- // MODIFICATION LOGIC // --
+local GunStatsModuleScript = ReplicatedStorage:WaitForChild("GunScripts"):WaitForChild("GunStats")
+
+local function ApplyMods()
+    -- Using task.spawn so the GUI doesn't freeze if require hangs
+    task.spawn(function()
+        local success, gunStats = pcall(require, GunStatsModuleScript)
+
+        if success and gunStats then
+            for _, gun in pairs(gunStats) do
+                for prop, value in pairs(mods) do
+                    if gun[prop] ~= value then
+                        gun[prop] = value
+                    end
                 end
             end
         end
-    end
-
-    task.wait(0.1) -- Runs 10 times a second (Sufficient and efficient)
+    end)
 end
+
+-- // TOGGLE LOGIC // --
+ToggleButton.MouseButton1Click:Connect(function()
+    isEnabled = not isEnabled
+    
+    if isEnabled then
+        -- Turn ON
+        ToggleButton.Text = "ON"
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(50, 200, 50) -- Green
+        
+        -- Start Loop
+        if loopConnection then loopConnection:Disconnect() end
+        loopConnection = task.spawn(function()
+            while isEnabled do
+                ApplyMods()
+                task.wait(0.1)
+            end
+        end)
+    else
+        -- Turn OFF
+        ToggleButton.Text = "OFF"
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100) -- Grey
+        
+        -- Stop Loop
+        if loopConnection then 
+            -- We break the while loop via the isEnabled flag
+        end
+    end
+end)
