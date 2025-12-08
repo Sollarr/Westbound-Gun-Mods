@@ -23,6 +23,8 @@ local loopConnection = nil
 -- // MODS TABLE // --
 local mods = {
     Spread = 0,
+    Recoil = 0,
+    Range = 10000,
     prepTime = 0.01,
     equipTime = 0.01,
     MaxShots = math.huge,
@@ -233,3 +235,4 @@ ToggleButton.MouseButton1Click:Connect(function()
         end
     end
 end)
+
