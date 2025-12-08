@@ -1,39 +1,48 @@
-local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
+local mods = {
 
-local speaker = Players.LocalPlayer
-local Char = speaker.Character or speaker.CharacterAdded:Wait()
-if not Char then return end
+    Damage = 10000, 
 
-local Human = Char:FindFirstChildOfClass("Humanoid")
-if not Human then return end
+    FanFire = true, 
 
-local Cam = Workspace.CurrentCamera
-local Pos = Cam.CFrame
+    camShakeResist = 0, 
 
--- Set vulnerable states on the ORIGINAL Humanoid to false (Less intrusive)
-Human:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false)
-Human:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
-Human:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-Human.BreakJointsOnDeath = false -- May help prevent death, try true if false fails
+    Spread = 0, 
 
--- Set health property on the ORIGINAL Humanoid
-Human.Health = Human.MaxHealth
+    prepTime = 0.1, 
 
--- *CRITICAL CHANGE: ABANDON THE CLONE STRATEGY FOR NOW*
--- The clone/destroy/re-parent logic is what triggers instant death.
--- We are now attempting to modify the tracked, original Humanoid directly.
+    equipTime = 0.1, 
 
--- Re-run the animation reset (still necessary for state stability)
-local AnimateScript = Char:FindFirstChild("Animate")
-if AnimateScript then
-    pcall(function()
-        AnimateScript.Disabled = true
-        task.wait(0.01)
-        AnimateScript.Disabled = false
-    end)
+    MaxShots = math.huge, 
+
+    ReloadAnimationSpeed = 0.1, 
+
+    ReloadSpeed = 0.1, 
+
+    BulletSpeed = 250, 
+
+    HipFireAccuracy = 0, 
+
+    ZoomAccuracy = 0, 
+
+    InstantFireAnimation = true
+
+}
+
+
+
+for _, gun in pairs(require(game:GetService("ReplicatedStorage").GunScripts.GunStats)) do
+
+    for prop, value in pairs(mods) do
+
+        if gun[prop] then
+
+            gun[prop] = value
+
+        end
+
+    end
+
 end
 
--- Re-set camera subject (may not be necessary but harmless)
-Cam.CameraSubject = Human
-Cam.CFrame = Pos
+
+
