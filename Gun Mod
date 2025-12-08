@@ -1,13 +1,13 @@
 local mods = {
-    Damage = math.huge, 
+    Damage = 10000, 
     FanFire = true, 
     camShakeResist = 0, 
     Spread = 0, 
-    prepTime = 0.1, 
-    equipTime = 0.1, 
+    prepTime = 0.01, 
+    equipTime = 0.01, 
     MaxShots = math.huge, 
-    ReloadAnimationSpeed = 0.1, 
-    ReloadSpeed = 0.1, 
+    ReloadAnimationSpeed = 0.01, 
+    ReloadSpeed = 0.01, 
     BulletSpeed = 250, 
     HipFireAccuracy = 0, 
     ZoomAccuracy = 0, 
@@ -21,3 +21,4 @@ for _, gun in pairs(require(game:GetService("ReplicatedStorage").GunScripts.GunS
         end
     end
 end
+
