@@ -1,6 +1,6 @@
 --[[ 
-    GENOCIDE GUI - Gun Mod Interface
-    Features: Draggable, Collapsible, Optimized Loop
+    GENOCIDE GUI - Gun Mod Interface (MOBILE OPTIMIZED)
+    Features: Touch-Friendly, Draggable, Collapsible, Smart Module Detection
 ]]
 
 local Players = game:GetService("Players")
@@ -9,145 +9,347 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local StarterGui = game:GetService("StarterGui")
 
 -- // CONFIGURATION // --
-local GUI_COLOR = Color3.fromRGB(30, 30, 30) -- Dark Grey Background
-local ACCENT_COLOR = Color3.fromRGB(255, 0, 0) -- Deep Red (Changed to fit the theme)
+local GUI_COLOR = Color3.fromRGB(30, 30, 30)
+local ACCENT_COLOR = Color3.fromRGB(255, 0, 0)
 local TEXT_COLOR = Color3.fromRGB(255, 255, 255)
+local SUCCESS_COLOR = Color3.fromRGB(50, 200, 50)
+local WARNING_COLOR = Color3.fromRGB(255, 200, 0)
+
+-- Mobile detection
+local UserInputService = game:GetService("UserInputService")
+local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+
+-- // CLEANUP EXISTING GUI // --
+pcall(function()
+    if CoreGui:FindFirstChild("GenocideGUI") then
+        CoreGui.GenocideGUI:Destroy()
+    end
+end)
+pcall(function()
+    if Players.LocalPlayer.PlayerGui:FindFirstChild("GenocideGUI") then
+        Players.LocalPlayer.PlayerGui.GenocideGUI:Destroy()
+    end
+end)
 
 -- // LOGIC VARIABLES // --
 local isEnabled = false
 local isMinimized = false
 local loopConnection = nil
+local gunModules = {}
+local originalValues = {}
+local modifiedCount = 0
+
+-- Touch handling
+local dragging = false
+local dragStart = nil
+local startPos = nil
+local dragInput = nil
 
 -- // MODS TABLE // --
 local mods = {
+    -- Damage
+    Damage = 999,
+    MaxDamage = 999,
+    MinDamage = 999,
+    HeadshotMultiplier = 100,
+    BodyShotMultiplier = 100,
+    
+    -- Accuracy & Recoil
     Spread = 0,
+    spread = 0,
     Recoil = 0,
-    Range = 10000,
-    prepTime = 0.01,
-    equipTime = 0.01,
-    MaxShots = math.huge,
-    ReloadAnimationSpeed = 0.01,
-    ReloadSpeed = 0.01,
+    recoil = 0,
+    crouchSpread = 0,
     HipFireAccuracy = 0,
     ZoomAccuracy = 0,
-    InstantFireAnimation = true,
-    BulletSpeed = 5000,
-    FireRate = 0,
-    Damage = 10,
-    HeadshotMultiplier = 5000,
-    BodyShotMultiplier = 5000,
-    AmmoPerShot = 0
+    
+    -- Fire Rate & Range
+    Range = 99999,
+    range = 99999,
+    FireRate = 0.001,
+    firerate = 0.001,
+    BulletSpeed = 9999,
+    
+    -- Reload & Equipment
+    prepTime = 0.01,
+    equipTime = 0.01,
+    ReloadSpeed = 0.01,
+    ReloadAnimationSpeed = 0.01,
+    
+    -- Ammo
+    MaxShots = math.huge,
+    AmmoCount = 999,
+    AmmoPerShot = 0,
+    AmmoPerMagazine = 999,
+    
+    -- Additional
+    Penetration = 999,
+    ShellsPerShot = 1,
+    Weight = -999,
+    Suppression = 0,
+    teamkill = false
 }
+
+-- // NOTIFICATION SYSTEM // --
+local function Notify(title, text, duration)
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = title,
+            Text = text,
+            Duration = duration or 3
+        })
+    end)
+end
+
+-- // FIND GUN MODULES DYNAMICALLY // --
+local function FindGunModules()
+    gunModules = {}
+    
+    -- Common paths for gun modules in various games
+    local searchPaths = {
+        ReplicatedStorage:FindFirstChild("GunScripts"),
+        ReplicatedStorage:FindFirstChild("TREKModules"),
+        ReplicatedStorage:FindFirstChild("GunSettings"),
+        ReplicatedStorage:FindFirstChild("WeaponModules"),
+        ReplicatedStorage:FindFirstChild("Weapons"),
+        ReplicatedStorage
+    }
+    
+    -- Add nested search for GunSettings
+    for _, path in ipairs(searchPaths) do
+        if path and path:FindFirstChild("GunSettings") then
+            table.insert(searchPaths, path.GunSettings)
+        end
+    end
+    
+    for _, container in ipairs(searchPaths) do
+        if container then
+            -- Look for ModuleScripts
+            for _, child in ipairs(container:GetDescendants()) do
+                if child:IsA("ModuleScript") then
+                    local name = child.Name:lower()
+                    -- Check if it's likely a gun module
+                    if name:find("gun") or name:find("weapon") or name:find("stats") or 
+                       name:find("rifle") or name:find("pistol") or name:find("shotgun") or
+                       name:find("sniper") or name:find("smg") then
+                        table.insert(gunModules, child)
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Also check for specific known module
+    local specificModule = ReplicatedStorage:FindFirstChild("GunScripts")
+    if specificModule then
+        specificModule = specificModule:FindFirstChild("GunStats")
+        if specificModule and specificModule:IsA("ModuleScript") then
+            table.insert(gunModules, specificModule)
+        end
+    end
+    
+    return #gunModules > 0
+end
 
 -- // GUI CREATION // --
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "GenocideGUI"
 ScreenGui.ResetOnSpawn = false
--- Try to parent to CoreGui for security, fallback to PlayerGui
-pcall(function() ScreenGui.Parent = CoreGui end)
-if not ScreenGui.Parent then ScreenGui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui") end
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
--- Main Frame
+-- Try to parent to CoreGui for security, fallback to PlayerGui
+local success = pcall(function() 
+    ScreenGui.Parent = CoreGui 
+end)
+if not success then 
+    ScreenGui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui") 
+end
+
+-- Main Frame (LARGER FOR MOBILE)
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 200, 0, 100)
-MainFrame.Position = UDim2.new(0.1, 0, 0.1, 0)
+MainFrame.Size = isMobile and UDim2.new(0, 280, 0, 160) or UDim2.new(0, 220, 0, 120)
+MainFrame.Position = isMobile and UDim2.new(0.5, -140, 0.7, -80) or UDim2.new(0.1, 0, 0.1, 0)
 MainFrame.BackgroundColor3 = GUI_COLOR
 MainFrame.BorderSizePixel = 0
 MainFrame.ClipsDescendants = true
+MainFrame.Active = true
 MainFrame.Parent = ScreenGui
 
 local UICorner = Instance.new("UICorner")
-UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.CornerRadius = UDim.new(0, 12)
 UICorner.Parent = MainFrame
 
--- Title Bar (Drag Handle)
-local TitleBar = Instance.new("TextButton") -- Using button for easier input handling
+-- Add shadow for depth
+local Shadow = Instance.new("ImageLabel")
+Shadow.Name = "Shadow"
+Shadow.BackgroundTransparency = 1
+Shadow.Position = UDim2.new(0, -15, 0, -15)
+Shadow.Size = UDim2.new(1, 30, 1, 30)
+Shadow.Image = "rbxassetid://1316045217"
+Shadow.ImageColor3 = Color3.new(0, 0, 0)
+Shadow.ImageTransparency = 0.7
+Shadow.ScaleType = Enum.ScaleType.Slice
+Shadow.SliceCenter = Rect.new(10, 10, 118, 118)
+Shadow.Parent = MainFrame
+
+-- Title Bar (LARGER FOR TOUCH)
+local TitleBar = Instance.new("Frame")
 TitleBar.Name = "TitleBar"
-TitleBar.Size = UDim2.new(1, 0, 0, 30)
+TitleBar.Size = UDim2.new(1, 0, 0, isMobile and 45 or 30)
 TitleBar.BackgroundColor3 = ACCENT_COLOR
-TitleBar.Text = "GENOCIDE"
-TitleBar.TextColor3 = TEXT_COLOR
-TitleBar.Font = Enum.Font.GothamBold
-TitleBar.TextSize = 16
-TitleBar.AutoButtonColor = false
+TitleBar.BorderSizePixel = 0
 TitleBar.Parent = MainFrame
 
 local TitleCorner = Instance.new("UICorner")
-TitleCorner.CornerRadius = UDim.new(0, 8)
+TitleCorner.CornerRadius = UDim.new(0, 12)
 TitleCorner.Parent = TitleBar
 
--- Fix bottom corners of title bar looking round when expanded
+-- Fix bottom corners
 local BottomCover = Instance.new("Frame")
-BottomCover.Name = "SquareBottom"
+BottomCover.Name = "BottomCover"
 BottomCover.Size = UDim2.new(1, 0, 0, 10)
 BottomCover.Position = UDim2.new(0, 0, 1, -10)
 BottomCover.BackgroundColor3 = ACCENT_COLOR
 BottomCover.BorderSizePixel = 0
 BottomCover.Parent = TitleBar
 
--- Toggle Button
-local ToggleButton = Instance.new("TextButton")
-ToggleButton.Name = "ToggleButton"
-ToggleButton.Size = UDim2.new(0.8, 0, 0, 40)
-ToggleButton.Position = UDim2.new(0.1, 0, 0.45, 0)
-ToggleButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100) -- Grey (Off)
-ToggleButton.Text = "OFF"
-ToggleButton.TextColor3 = TEXT_COLOR
-ToggleButton.Font = Enum.Font.GothamBold
-ToggleButton.TextSize = 18
-ToggleButton.Parent = MainFrame
+-- Title Text
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Name = "TitleLabel"
+TitleLabel.Size = UDim2.new(1, -50, 1, 0)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Text = "GENOCIDE"
+TitleLabel.TextColor3 = TEXT_COLOR
+TitleLabel.Font = Enum.Font.GothamBold
+TitleLabel.TextSize = isMobile and 20 or 16
+TitleLabel.Parent = TitleBar
 
-local ToggleCorner = Instance.new("UICorner")
-ToggleCorner.CornerRadius = UDim.new(0, 6)
-ToggleCorner.Parent = ToggleButton
-
--- Minimize Button (The 'G' Icon logic)
+-- Minimize Button (LARGER FOR TOUCH)
 local MinimizeButton = Instance.new("TextButton")
 MinimizeButton.Name = "MinimizeButton"
-MinimizeButton.Size = UDim2.new(0, 25, 0, 25)
-MinimizeButton.Position = UDim2.new(1, -30, 0, 2)
-MinimizeButton.BackgroundTransparency = 1
+MinimizeButton.Size = UDim2.new(0, isMobile and 45 or 30, 0, isMobile and 45 or 30)
+MinimizeButton.Position = UDim2.new(1, isMobile and -45 or -30, 0, 0)
+MinimizeButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
 MinimizeButton.Text = "-"
 MinimizeButton.TextColor3 = TEXT_COLOR
 MinimizeButton.Font = Enum.Font.GothamBold
-MinimizeButton.TextSize = 20
+MinimizeButton.TextSize = isMobile and 28 or 20
+MinimizeButton.AutoButtonColor = false
 MinimizeButton.Parent = TitleBar
-MinimizeButton.ZIndex = 2
 
--- // DRAGGING LOGIC // --
-local dragging, dragInput, dragStart, startPos
+local MinCorner = Instance.new("UICorner")
+MinCorner.CornerRadius = UDim.new(0, 8)
+MinCorner.Parent = MinimizeButton
 
-local function update(input)
-    local delta = input.Position - dragStart
-    MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+-- Hover effects for desktop
+if not isMobile then
+    MinimizeButton.MouseEnter:Connect(function()
+        MinimizeButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+    end)
+    MinimizeButton.MouseLeave:Connect(function()
+        MinimizeButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    end)
+end
+
+-- Status Label
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Name = "StatusLabel"
+StatusLabel.Size = UDim2.new(0.9, 0, 0, isMobile and 25 or 20)
+StatusLabel.Position = UDim2.new(0.05, 0, 0, isMobile and 50 or 35)
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.Text = "Ready"
+StatusLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+StatusLabel.Font = Enum.Font.Gotham
+StatusLabel.TextSize = isMobile and 14 or 12
+StatusLabel.Parent = MainFrame
+
+-- Toggle Button (MUCH LARGER FOR MOBILE)
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Name = "ToggleButton"
+ToggleButton.Size = isMobile and UDim2.new(0.85, 0, 0, 50) or UDim2.new(0.8, 0, 0, 35)
+ToggleButton.Position = isMobile and UDim2.new(0.075, 0, 0, 85) or UDim2.new(0.1, 0, 0, 60)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+ToggleButton.Text = "OFF"
+ToggleButton.TextColor3 = TEXT_COLOR
+ToggleButton.Font = Enum.Font.GothamBold
+ToggleButton.TextSize = isMobile and 24 or 18
+ToggleButton.AutoButtonColor = false
+ToggleButton.Parent = MainFrame
+
+local ToggleCorner = Instance.new("UICorner")
+ToggleCorner.CornerRadius = UDim.new(0, 8)
+ToggleCorner.Parent = ToggleButton
+
+-- Visual feedback for button presses
+local function ButtonPressEffect(button)
+    button.MouseButton1Down:Connect(function()
+        button.Size = button.Size - UDim2.new(0, 4, 0, 4)
+        button.Position = button.Position + UDim2.new(0, 2, 0, 2)
+    end)
+    
+    button.MouseButton1Up:Connect(function()
+        button.Size = button.Size + UDim2.new(0, 4, 0, 4)
+        button.Position = button.Position - UDim2.new(0, 2, 0, 2)
+    end)
+end
+
+ButtonPressEffect(ToggleButton)
+ButtonPressEffect(MinimizeButton)
+
+-- // MOBILE TOUCH DRAGGING // --
+local function GetTouchDelta(touch)
+    if dragStart and touch then
+        return touch.Position - dragStart
+    end
+    return Vector2.new(0, 0)
 end
 
 TitleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+    if input.UserInputType == Enum.UserInputType.Touch then
         dragging = true
         dragStart = input.Position
         startPos = MainFrame.Position
-        
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
+        dragInput = input
+    elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        dragInput = input
+    end
+end)
+
+TitleBar.InputEnded:Connect(function(input)
+    if input == dragInput then
+        dragging = false
+        dragInput = nil
     end
 end)
 
 TitleBar.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+    if input.UserInputType == Enum.UserInputType.Touch then
         dragInput = input
     end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        update(input)
+    if dragging and dragInput and input == dragInput then
+        local delta = GetTouchDelta(input)
+        MainFrame.Position = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
     end
 end)
 
@@ -155,56 +357,118 @@ end)
 MinimizeButton.MouseButton1Click:Connect(function()
     isMinimized = not isMinimized
     
+    local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    
     if isMinimized then
-        -- Shrink to icon
-        local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-        
-        -- Hide contents
+        -- Minimize to icon
+        StatusLabel.Visible = false
         ToggleButton.Visible = false
-        TitleBar.Text = "G"
-        MinimizeButton.Text = "" -- Hide the minus sign
-        BottomCover.Visible = false -- Keep round corners
+        TitleLabel.Text = "G"
+        MinimizeButton.Text = "+"
+        BottomCover.Visible = false
         
-        -- Resize
-        TweenService:Create(MainFrame, tweenInfo, {Size = UDim2.new(0, 40, 0, 40)}):Play()
-        TweenService:Create(TitleBar, tweenInfo, {Size = UDim2.new(1, 0, 1, 0)}):Play()
+        local targetSize = isMobile and UDim2.new(0, 70, 0, 70) or UDim2.new(0, 50, 0, 50)
+        local sizeTween = TweenService:Create(MainFrame, tweenInfo, {Size = targetSize})
+        local titleSizeTween = TweenService:Create(TitleBar, tweenInfo, {Size = UDim2.new(1, 0, 1, 0)})
         
-        -- Center text
-        TitleBar.TextSize = 24
+        sizeTween:Play()
+        titleSizeTween:Play()
+        
+        TitleLabel.TextSize = isMobile and 32 or 24
     else
-        -- Expand back
-        local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        -- Expand
+        local targetSize = isMobile and UDim2.new(0, 280, 0, 160) or UDim2.new(0, 220, 0, 120)
+        local sizeTween = TweenService:Create(MainFrame, tweenInfo, {Size = targetSize})
+        local titleSizeTween = TweenService:Create(TitleBar, tweenInfo, {Size = UDim2.new(1, 0, 0, isMobile and 45 or 30)})
         
-        TweenService:Create(MainFrame, tweenInfo, {Size = UDim2.new(0, 200, 0, 100)}):Play()
-        TweenService:Create(TitleBar, tweenInfo, {Size = UDim2.new(1, 0, 0, 30)}):Play()
+        sizeTween:Play()
+        titleSizeTween:Play()
         
-        task.wait(0.1) -- Wait for tween slightly
-        ToggleButton.Visible = true
-        TitleBar.Text = "GENOCIDE"
-        MinimizeButton.Text = "-"
-        BottomCover.Visible = true
-        TitleBar.TextSize = 16
+        sizeTween.Completed:Connect(function()
+            StatusLabel.Visible = true
+            ToggleButton.Visible = true
+            TitleLabel.Text = "GENOCIDE"
+            MinimizeButton.Text = "-"
+            BottomCover.Visible = true
+            TitleLabel.TextSize = isMobile and 20 or 16
+        end)
     end
 end)
 
 -- // MODIFICATION LOGIC // --
-local GunStatsModuleScript = ReplicatedStorage:WaitForChild("GunScripts"):WaitForChild("GunStats")
-
-local function ApplyMods()
-    -- Using task.spawn so the GUI doesn't freeze if require hangs
-    task.spawn(function()
-        local success, gunStats = pcall(require, GunStatsModuleScript)
-
-        if success and gunStats then
-            for _, gun in pairs(gunStats) do
-                for prop, value in pairs(mods) do
-                    if gun[prop] ~= value then
-                        gun[prop] = value
-                    end
+local function StoreOriginalValues(gunStats)
+    for gunName, gun in pairs(gunStats) do
+        if not originalValues[gunName] then
+            originalValues[gunName] = {}
+            for prop, _ in pairs(mods) do
+                if gun[prop] ~= nil then
+                    originalValues[gunName][prop] = gun[prop]
                 end
             end
         end
-    end)
+    end
+end
+
+local function ApplyMods()
+    modifiedCount = 0
+    
+    for _, moduleScript in ipairs(gunModules) do
+        local success, result = pcall(function()
+            local gunStats = require(moduleScript)
+            
+            if type(gunStats) == "table" then
+                StoreOriginalValues(gunStats)
+                
+                for gunName, gun in pairs(gunStats) do
+                    if type(gun) == "table" then
+                        for prop, value in pairs(mods) do
+                            if gun[prop] ~= nil and gun[prop] ~= value then
+                                gun[prop] = value
+                                modifiedCount = modifiedCount + 1
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+        
+        if not success then
+            warn("Failed to modify module:", moduleScript.Name, "-", result)
+        end
+    end
+    
+    return modifiedCount > 0
+end
+
+local function RestoreMods()
+    for _, moduleScript in ipairs(gunModules) do
+        pcall(function()
+            local gunStats = require(moduleScript)
+            
+            if type(gunStats) == "table" then
+                for gunName, gun in pairs(gunStats) do
+                    if type(gun) == "table" and originalValues[gunName] then
+                        for prop, value in pairs(originalValues[gunName]) do
+                            gun[prop] = value
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end
+
+-- // INITIALIZATION // --
+local foundModules = FindGunModules()
+
+if foundModules then
+    StatusLabel.Text = "Found " .. #gunModules .. " module(s)"
+    StatusLabel.TextColor3 = SUCCESS_COLOR
+    Notify("GENOCIDE", "Found " .. #gunModules .. " gun module(s)!", 3)
+else
+    StatusLabel.Text = "No modules found"
+    StatusLabel.TextColor3 = WARNING_COLOR
+    Notify("GENOCIDE", "No gun modules detected yet.", 3)
 end
 
 -- // TOGGLE LOGIC // --
@@ -212,27 +476,89 @@ ToggleButton.MouseButton1Click:Connect(function()
     isEnabled = not isEnabled
     
     if isEnabled then
+        -- Check for modules again if none were found
+        if #gunModules == 0 then
+            FindGunModules()
+            if #gunModules == 0 then
+                StatusLabel.Text = "No modules found!"
+                StatusLabel.TextColor3 = WARNING_COLOR
+                Notify("GENOCIDE", "No gun modules detected!", 3)
+                isEnabled = false
+                return
+            end
+        end
+        
         -- Turn ON
         ToggleButton.Text = "ON"
-        ToggleButton.BackgroundColor3 = Color3.fromRGB(50, 200, 50) -- Green
+        ToggleButton.BackgroundColor3 = SUCCESS_COLOR
         
-        -- Start Loop
-        if loopConnection then loopConnection:Disconnect() end
-        loopConnection = task.spawn(function()
-            while isEnabled do
+        -- Initial application
+        local success = ApplyMods()
+        
+        if success then
+            StatusLabel.Text = "ACTIVE - " .. modifiedCount .. " mods"
+            StatusLabel.TextColor3 = SUCCESS_COLOR
+            Notify("GENOCIDE", "Gun mods activated!", 2)
+        else
+            StatusLabel.Text = "Failed to apply"
+            StatusLabel.TextColor3 = WARNING_COLOR
+        end
+        
+        -- Start continuous loop
+        if loopConnection then
+            loopConnection:Disconnect()
+        end
+        
+        loopConnection = RunService.Heartbeat:Connect(function()
+            if isEnabled then
                 ApplyMods()
-                task.wait(0.1)
             end
         end)
+        
     else
         -- Turn OFF
         ToggleButton.Text = "OFF"
-        ToggleButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100) -- Grey
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+        StatusLabel.Text = "Disabled"
+        StatusLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
         
-        -- Stop Loop
-        if loopConnection then 
-            -- We break the while loop via the isEnabled flag
+        -- Stop loop
+        if loopConnection then
+            loopConnection:Disconnect()
+            loopConnection = nil
         end
+        
+        -- Restore original values
+        RestoreMods()
+        
+        Notify("GENOCIDE", "Gun mods deactivated.", 2)
     end
 end)
 
+-- // CLEANUP ON GUI DESTROY // --
+ScreenGui.AncestryChanged:Connect(function()
+    if not ScreenGui.Parent then
+        if loopConnection then
+            loopConnection:Disconnect()
+        end
+        RestoreMods()
+    end
+end)
+
+-- // AUTO-REFRESH ON RESPAWN // --
+Players.LocalPlayer.CharacterAdded:Connect(function()
+    wait(1)
+    if isEnabled then
+        FindGunModules()
+        ApplyMods()
+    end
+end)
+
+-- // INITIAL NOTIFICATION // --
+print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print("🔥 GENOCIDE GUI LOADED 🔥")
+print("Mobile Optimized: " .. tostring(isMobile))
+print("Modules found: " .. #gunModules)
+print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+Notify("GENOCIDE", isMobile and "Mobile mode enabled!" or "Desktop mode enabled!", 2)
